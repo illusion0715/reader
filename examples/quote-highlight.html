@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>EPUB.js 莫兰迪 AI 增强版</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+
+    <link rel="stylesheet" type="text/css" href="examples.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style type="text/css">
+        :root {
+            --primary-color: #779ECB;
+            --bg-dark: #1a1a2e;
+            --sidebar-bg: rgba(26, 26, 46, 0.98);
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg-dark);
+            font-family: "Microsoft YaHei", sans-serif;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        /* 右侧边栏 */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            right: -360px;
+            width: 360px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            transition: right 0.35s ease;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #sidebar.open {
+            right: 0;
+        }
+
+        /* 左侧 AI 面板 */
+        #ai-panel {
+            position: fixed;
+            top: 0;
+            left: -400px;
+            width: 400px;
+            height: 100vh;
+            background: linear-gradient(180deg, #0d0d1a 0%, #1a1a2e 100%);
+            z-index: 2000;
+            transition: left 0.35s ease;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid rgba(119, 158, 203, 0.2);
+            box-shadow: 5px 0 30px rgba(0, 0, 0, 0.5);
+        }
+
+        #ai-panel.open {
+            left: 0;
+        }
+
+        .ai-header {
+            padding: 20px;
+            background: linear-gradient(90deg, rgba(119, 158, 203, 0.1) 0%, transparent 100%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .ai-header .icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #779ECB 0%, #8FBC8F 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #fff;
+        }
+
+        .ai-header .title {
+            flex: 1;
+        }
+
+        .ai-header .title h3 {
+            margin: 0;
+            font-size: 16px;
+            color: #eee;
+        }
+
+        .ai-header .title p {
+            margin: 4px 0 0;
+            font-size: 11px;
+            color: #888;
+        }
+
+        .ai-header .close-btn {
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            border-radius: 8px;
+            color: #888;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ai-header .close-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .ai-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .ai-msg {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .ai-msg.user {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .ai-msg.user .bubble {
+            background: linear-gradient(135deg, #779ECB 0%, #5a7fb0 100%);
+            color: #fff;
+            border-radius: 16px 16px 4px 16px;
+            padding: 12px 16px;
+            max-width: 85%;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .ai-msg.assistant .bubble {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px 16px 16px 4px;
+            padding: 16px;
+            max-width: 95%;
+            font-size: 13px;
+            line-height: 1.8;
+            color: #ccc;
+        }
+
+        /* Markdown 样式 */
+        .ai-msg.assistant .bubble h1,
+        .ai-msg.assistant .bubble h2,
+        .ai-msg.assistant .bubble h3 {
+            color: #779ECB;
+            margin: 16px 0 8px 0;
+            border-bottom: 1px solid rgba(119, 158, 203, 0.3);
+            padding-bottom: 6px;
+        }
+
+        .ai-msg.assistant .bubble h1 {
+            font-size: 18px;
+        }
+
+        .ai-msg.assistant .bubble h2 {
+            font-size: 16px;
+        }
+
+        .ai-msg.assistant .bubble h3 {
+            font-size: 14px;
+            border-bottom: none;
+        }
+
+        .ai-msg.assistant .bubble strong {
+            color: #E1AD01;
+            font-weight: bold;
+        }
+
+        .ai-msg.assistant .bubble em {
+            color: #8FBC8F;
+            font-style: italic;
+        }
+
+        .ai-msg.assistant .bubble ul,
+        .ai-msg.assistant .bubble ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .ai-msg.assistant .bubble li {
+            margin: 6px 0;
+        }
+
+        .ai-msg.assistant .bubble blockquote {
+            border-left: 3px solid #779ECB;
+            margin: 10px 0;
+            padding: 8px 15px;
+            background: rgba(119, 158, 203, 0.1);
+            border-radius: 0 8px 8px 0;
+        }
+
+        .ai-msg.assistant .bubble code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
+            font-size: 12px;
+        }
+
+        .ai-msg.assistant .bubble pre {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        .ai-msg.assistant .bubble hr {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 15px 0;
+        }
+
+        .ai-msg.system .bubble {
+            background: rgba(119, 158, 203, 0.1);
+            border-left: 3px solid #779ECB;
+            padding: 10px 15px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .ai-input-area {
+            padding: 15px 20px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .ai-attachments {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .attachment-item {
+            background: rgba(119, 158, 203, 0.15);
+            border: 1px solid rgba(119, 158, 203, 0.3);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 11px;
+            color: #779ECB;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .attachment-item .remove {
+            cursor: pointer;
+            opacity: 0.6;
+        }
+
+        .attachment-item .remove:hover {
+            opacity: 1;
+        }
+
+        .ai-input-box {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .ai-input-box textarea {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 12px 15px;
+            color: #eee;
+            font-size: 13px;
+            resize: none;
+            min-height: 44px;
+            max-height: 120px;
+            font-family: inherit;
+        }
+
+        .ai-input-box textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .ai-input-box textarea::placeholder {
+            color: #666;
+        }
+
+        .ai-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .ai-action-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #888;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+
+        .ai-action-btn:hover {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: #fff;
+        }
+
+        .ai-action-btn.send {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: #fff;
+        }
+
+        .ai-quick-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .quick-btn {
+            flex: 1;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #888;
+            font-size: 11px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .quick-btn:hover {
+            background: rgba(119, 158, 203, 0.1);
+            border-color: rgba(119, 158, 203, 0.3);
+            color: var(--primary-color);
+        }
+
+        /* 左侧 AI 按钮 */
+        #ai-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #779ECB 0%, #8FBC8F 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            cursor: pointer;
+            z-index: 1000;
+            font-size: 18px;
+            box-shadow: 0 4px 15px rgba(119, 158, 203, 0.4);
+            transition: 0.3s;
+        }
+
+        #ai-toggle:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(119, 158, 203, 0.5);
+        }
+
+        .prompt-tag {
+            padding: 4px 10px;
+            background: rgba(119, 158, 203, 0.15);
+            border: 1px solid rgba(119, 158, 203, 0.3);
+            border-radius: 12px;
+            font-size: 11px;
+            color: #779ECB;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .prompt-tag:hover {
+            background: rgba(119, 158, 203, 0.3);
+            border-color: var(--primary-color);
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 14px 5px;
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .tab-btn.active {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .tab-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        .data-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .data-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .data-item .title {
+            font-size: 13px;
+            color: #eee;
+            display: block;
+        }
+
+        .data-item.active {
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 12px;
+            right: 10px;
+            color: #ff5e5e;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .data-item:hover .delete-btn {
+            opacity: 0.7;
+        }
+
+        #toolbar {
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+            opacity: 0.5;
+            transition: 0.3s;
+        }
+
+        #toolbar:hover {
+            opacity: 1;
+        }
+
+        .tool-btn {
+            background: rgba(42, 42, 74, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #highlight-menu {
+            position: fixed;
+            background: #fff;
+            border-radius: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            padding: 8px 15px;
+            display: none;
+            z-index: 3000;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .color-opt {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .ai-opt {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            background: #eee;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        #note-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 4000;
+        }
+
+        .modal-content {
+            background: #222;
+            padding: 20px;
+            border-radius: 12px;
+            width: 300px;
+        }
+
+        .modal-content textarea {
+            width: 100%;
+            height: 100px;
+            background: #111;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            resize: none;
+            box-sizing: border-box;
+        }
+
+        .modal-btns {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        #viewer {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .arrow {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 30px;
+            color: rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            padding: 40px 10px;
+            z-index: 100;
+        }
+
+        .arrow:hover {
+            color: var(--primary-color);
+        }
+
+        #menu-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary-color);
+            cursor: pointer;
+            z-index: 1000;
+            font-size: 18px;
+        }
+
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1500;
+            opacity: 0;
+            pointer-events: none;
+            transition: 0.3s;
+        }
+
+        #overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .filter-dot {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+
+        .filter-dot.active {
+            border-color: #fff;
+        }
+
+        .note-preview {
+            font-size: 11px;
+            color: #E1AD01;
+            margin-top: 5px;
+            padding-top: 5px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="viewer"></div>
+    <div id="prev" class="arrow" style="left:10px;"><i class="fas fa-chevron-left"></i></div>
+    <div id="next" class="arrow" style="right:10px;"><i class="fas fa-chevron-right"></i></div>
+    <div id="overlay"></div>
+
+    <!-- 左侧 AI 按钮 -->
+    <div id="ai-toggle"><i class="fas fa-robot"></i></div>
+
+    <!-- 左侧 AI 面板 -->
+    <div id="ai-panel">
+        <div class="ai-header">
+            <div class="icon"><i class="fas fa-brain"></i></div>
+            <div class="title">
+                <h3>AI 阅读助手</h3>
+                <p>基于当前书籍的智能问答</p>
+            </div>
+            <button class="close-btn" onclick="toggleAIPanel()"><i class="fas fa-times"></i></button>
+        </div>
+
+        <div class="ai-messages" id="ai-messages">
+            <div class="ai-msg system">
+                <div class="bubble">
+                    <i class="fas fa-info-circle"></i> 我是您的 AI 阅读助手。您可以：<br>
+                    • 直接输入问题进行对话<br>
+                    • 上传图片或文件作为参考<br>
+                    • 点击下方快捷按钮快速操作
+                </div>
+            </div>
+        </div>
+
+        <div class="ai-input-area">
+            <div class="ai-attachments" id="ai-attachments"></div>
+            <div class="ai-input-box">
+                <textarea id="ai-input" placeholder="输入您的问题..." rows="1" onkeydown="handleInputKey(event)"></textarea>
+                <div class="ai-actions">
+                    <label class="ai-action-btn" title="上传图片">
+                        <i class="fas fa-image"></i>
+                        <input type="file" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+                    </label>
+                    <label class="ai-action-btn" title="上传文件">
+                        <i class="fas fa-paperclip"></i>
+                        <input type="file" accept=".txt,.pdf,.doc,.docx" style="display:none"
+                            onchange="handleFileUpload(event)">
+                    </label>
+                    <button class="ai-action-btn send" onclick="sendAIMessage()"><i
+                            class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+            <div class="ai-quick-actions">
+                <button class="quick-btn" onclick="quickAction('summary')"><i class="fas fa-compress-alt"></i>
+                    总结全书</button>
+                <button class="quick-btn" onclick="quickAction('explain')"><i class="fas fa-lightbulb"></i>
+                    解读选中</button>
+                <button class="quick-btn" onclick="quickAction('translate')"><i class="fas fa-language"></i> 翻译</button>
+            </div>
+            <div style="margin-top:10px; text-align:center;">
+                <button class="quick-btn" style="width:100%;" onclick="toggleAISettings()"><i class="fas fa-cog"></i> AI
+                    设置</button>
+            </div>
+            <div id="ai-settings-panel"
+                style="display:none; margin-top:10px; padding:10px; background:rgba(0,0,0,0.3); border-radius:8px;">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:11px;color:#888;margin-bottom:4px;">API 地址</label>
+                    <input type="text" id="ai-url" placeholder="https://api.openai.com/v1"
+                        style="width:100%;padding:6px;background:#222;border:1px solid #444;color:#fff;border-radius:4px;box-sizing:border-box;font-size:12px;">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:11px;color:#888;margin-bottom:4px;">API Key</label>
+                    <input type="password" id="ai-key"
+                        style="width:100%;padding:6px;background:#222;border:1px solid #444;color:#fff;border-radius:4px;box-sizing:border-box;font-size:12px;">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:11px;color:#888;margin-bottom:4px;">模型</label>
+                    <input type="text" id="ai-model" placeholder="gpt-3.5-turbo"
+                        style="width:100%;padding:6px;background:#222;border:1px solid #444;color:#fff;border-radius:4px;box-sizing:border-box;font-size:12px;">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:11px;color:#888;margin-bottom:4px;">系统提示词</label>
+                    <textarea id="ai-system-prompt" rows="3" placeholder="你是专业的阅读助手..."
+                        style="width:100%;padding:6px;background:#222;border:1px solid #444;color:#fff;border-radius:4px;box-sizing:border-box;font-size:12px;resize:vertical;"></textarea>
+                    <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">
+                        <span class="prompt-tag" onclick="setPromptPreset('reader')">📚 解读</span>
+                        <span class="prompt-tag" onclick="setPromptPreset('analyst')">🔍 分析</span>
+                        <span class="prompt-tag" onclick="setPromptPreset('teacher')">👨‍🏫 教学</span>
+                        <span class="prompt-tag" onclick="setPromptPreset('translator')">🌐 翻译</span>
+                    </div>
+                </div>
+                <button onclick="saveSettings()"
+                    style="width:100%;padding:8px;background:var(--primary-color);border:none;border-radius:4px;cursor:pointer;font-size:12px;">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toolbar">
+        <label for="import-file" class="tool-btn"><i class="fas fa-plus"></i> 添加书籍</label>
+        <input type="file" id="import-file" accept=".epub" style="display:none">
+        <button class="tool-btn" onclick="addBookmark()"><i class="fas fa-bookmark"></i> 记书签</button>
+        <span id="page-info" style="font-size:11px; align-self:center; color:#888; margin-left:10px;">...</span>
+    </div>
+
+    <div id="menu-toggle"><i class="fas fa-bars"></i></div>
+
+    <div id="sidebar">
+        <div class="sidebar-tabs">
+            <button class="tab-btn active" data-tab="library">书库</button>
+            <button class="tab-btn" data-tab="toc">目录</button>
+            <button class="tab-btn" data-tab="bookmarks">书签</button>
+            <button class="tab-btn" data-tab="highlights">高亮</button>
+            <button class="tab-btn" data-tab="settings">设置</button>
+        </div>
+
+        <div class="tab-content">
+            <div id="pane-library" class="tab-pane active">
+                <div id="library-container"></div>
+            </div>
+            <div id="pane-toc" class="tab-pane">
+                <div id="toc-container"></div>
+            </div>
+            <div id="pane-bookmarks" class="tab-pane">
+                <div id="bookmark-container"></div>
+            </div>
+            <div id="pane-highlights" class="tab-pane">
+                <div class="filter-bar">
+                    <div class="filter-dot active"
+                        style="background:#444;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;"
+                        data-filter="all">ALL</div>
+                    <div class="filter-dot" style="background:#779ECB" data-filter="#779ECB"></div>
+                    <div class="filter-dot" style="background:#8FBC8F" data-filter="#8FBC8F"></div>
+                    <div class="filter-dot" style="background:#C08081" data-filter="#C08081"></div>
+                    <div class="filter-dot" style="background:#E1AD01" data-filter="#E1AD01"></div>
+                </div>
+                <div id="highlight-container"></div>
+            </div>
+            <div id="pane-settings" class="tab-pane">
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-size:12px; color:#888; margin-bottom:8px;">引号高亮颜色</label>
+                    <div style="display:flex; gap:8px;">
+                        <div class="color-opt" style="background:#779ECB"
+                            onclick="document.getElementById('cfg-color').value='#779ECB'"></div>
+                        <div class="color-opt" style="background:#8FBC8F"
+                            onclick="document.getElementById('cfg-color').value='#8FBC8F'"></div>
+                        <div class="color-opt" style="background:#C08081"
+                            onclick="document.getElementById('cfg-color').value='#C08081'"></div>
+                        <div class="color-opt" style="background:#E1AD01"
+                            onclick="document.getElementById('cfg-color').value='#E1AD01'"></div>
+                    </div>
+                    <input type="color" id="cfg-color" value="#779ECB"
+                        style="width:100%; height:30px; margin-top:10px; border:none; box-sizing:border-box;">
+                </div>
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-size:12px; color:#888; margin-bottom:8px;">引号对（左引号 / 右引号）</label>
+                    <div style="display:flex; gap:10px; width:100%; box-sizing:border-box;">
+                        <input type="text" id="cfg-lq" value=""" style=" width:50%; padding:8px; background:#222;
+                            border:1px solid #444; color:#fff; border-radius:4px; text-align:center; font-size:18px;
+                            box-sizing:border-box;">
+                        <input type="text" id="cfg-rq" value=""" style=" width:50%; padding:8px; background:#222;
+                            border:1px solid #444; color:#fff; border-radius:4px; text-align:center; font-size:18px;
+                            box-sizing:border-box;">
+                    </div>
+                    <p style="font-size:11px; color:#666; margin-top:8px;">提示：中文用 " 和 "，英文用 " 和 "</p>
+                </div>
+                <button onclick="saveSettings()"
+                    style="width:100%; padding:12px; background:var(--primary-color); border:none; border-radius:6px; font-weight:bold; cursor:pointer; box-sizing:border-box;">保存引号设置</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="highlight-menu">
+        <div class="color-opt" style="background:#779ECB" onclick="doHighlight('#779ECB')"></div>
+        <div class="color-opt" style="background:#8FBC8F" onclick="doHighlight('#8FBC8F')"></div>
+        <div class="color-opt" style="background:#C08081" onclick="doHighlight('#C08081')"></div>
+        <div class="color-opt" style="background:#E1AD01" onclick="doHighlight('#E1AD01')"></div>
+        <div style="width:1px; height:20px; background:#ddd;"></div>
+        <div class="ai-opt" onclick="sendSelectedToAI()"><i class="fas fa-robot"></i></div>
+    </div>
+
+    <div id="note-modal">
+        <div class="modal-content">
+            <h4 style="margin-top:0; color:#eee;">添加感想</h4>
+            <textarea id="note-text" placeholder="写下你的读书心得..."></textarea>
+            <div class="modal-btns">
+                <button class="tool-btn" onclick="closeModal()">取消</button>
+                <button class="tool-btn" style="background:var(--primary-color);color:#000;"
+                    onclick="saveNote()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========== 全局变量 ==========
+        var db, book, rendition, currentBookId, currentCfi, currentContents;
+        var hlFilter = 'all';
+        var aiAttachments = [];
+        var data = {
+            progress: '',
+            bookmarks: [],
+            highlights: [],
+            config: { color: '#779ECB', lq: '"', rq: '"', aiUrl: '', aiKey: '', aiModel: 'gpt-3.5-turbo', systemPrompt: '' }
+        };
+
+        // ========== 数据库初始化 ==========
+        var dbReq = indexedDB.open('EPUBReader', 1);
+        dbReq.onupgradeneeded = function (e) {
+            e.target.result.createObjectStore('books', { keyPath: 'id' });
+        };
+        dbReq.onsuccess = function (e) {
+            db = e.target.result;
+            init();
+        };
+        dbReq.onerror = function (e) {
+            console.error('数据库错误:', e);
+            init();
+        };
+
+        // ========== 初始化 ==========
+        function init() {
+            setupEvents();
+            refreshLibrary();
+            var lastBook = localStorage.getItem('lastBook');
+            if (lastBook && db) {
+                loadBook(lastBook);
+            } else {
+                loadFromUrl('https://s3.amazonaws.com/moby-dick/moby-dick.epub', 'Moby Dick', 'default');
+            }
+        }
+
+        function setupEvents() {
+            document.getElementById('menu-toggle').onclick = toggleSidebar;
+            document.getElementById('overlay').onclick = function () {
+                if (document.getElementById('sidebar').classList.contains('open')) toggleSidebar();
+                if (document.getElementById('ai-panel').classList.contains('open')) toggleAIPanel();
+            };
+            document.getElementById('ai-toggle').onclick = toggleAIPanel;
+
+            document.querySelectorAll('.tab-btn').forEach(function (btn) {
+                btn.onclick = function () {
+                    document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+                    document.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.remove('active'); });
+                    btn.classList.add('active');
+                    document.getElementById('pane-' + btn.dataset.tab).classList.add('active');
+                };
+            });
+
+            document.getElementById('next').onclick = function () { if (rendition) rendition.next(); };
+            document.getElementById('prev').onclick = function () { if (rendition) rendition.prev(); };
+
+            document.getElementById('import-file').onchange = function (e) {
+                var file = e.target.files[0];
+                if (!file) return;
+                var reader = new FileReader();
+                reader.onload = function (ev) {
+                    var id = 'book_' + Date.now();
+                    if (db) {
+                        var tx = db.transaction('books', 'readwrite');
+                        tx.objectStore('books').put({ id: id, name: file.name, data: ev.target.result });
+                        tx.oncomplete = function () {
+                            refreshLibrary();
+                            loadBook(id);
+                        };
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+            document.querySelectorAll('.filter-dot').forEach(function (dot) {
+                dot.onclick = function () {
+                    document.querySelectorAll('.filter-dot').forEach(function (d) { d.classList.remove('active'); });
+                    dot.classList.add('active');
+                    hlFilter = dot.dataset.filter;
+                    refreshHighlights();
+                };
+            });
+
+            // 自动调整输入框高度
+            document.getElementById('ai-input').addEventListener('input', function () {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('active');
+        }
+
+        function toggleAIPanel() {
+            document.getElementById('ai-panel').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('active');
+        }
+
+        function toggleAISettings() {
+            var panel = document.getElementById('ai-settings-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // ========== AI 面板功能 ==========
+        function handleInputKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendAIMessage();
+            }
+        }
+
+        function handleImageUpload(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                aiAttachments.push({ type: 'image', name: file.name, data: ev.target.result });
+                refreshAttachments();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function handleFileUpload(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                aiAttachments.push({ type: 'file', name: file.name, data: ev.target.result });
+                refreshAttachments();
+            };
+            reader.readAsText(file);
+        }
+
+        function refreshAttachments() {
+            var container = document.getElementById('ai-attachments');
+            container.innerHTML = aiAttachments.map(function (a, i) {
+                return '<div class="attachment-item"><i class="fas fa-' + (a.type === 'image' ? 'image' : 'file') + '"></i> ' + a.name + ' <span class="remove" onclick="removeAttachment(' + i + ')"><i class="fas fa-times"></i></span></div>';
+            }).join('');
+        }
+
+        function removeAttachment(idx) {
+            aiAttachments.splice(idx, 1);
+            refreshAttachments();
+        }
+
+        function addAIMessage(role, content) {
+            var container = document.getElementById('ai-messages');
+            var div = document.createElement('div');
+            div.className = 'ai-msg ' + role;
+            div.innerHTML = '<div class="bubble">' + content + '</div>';
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function sendAIMessage() {
+            var input = document.getElementById('ai-input');
+            var text = input.value.trim();
+            if (!text && aiAttachments.length === 0) return;
+
+            var url = data.config.aiUrl || 'https://api.openai.com/v1';
+            var key = data.config.aiKey;
+            if (!key) {
+                alert('请在右侧设置面板中配置 API Key');
+                return;
+            }
+
+            // 显示用户消息
+            var userContent = text;
+            if (aiAttachments.length > 0) {
+                userContent += '<br><small style="color:#888;">[附件: ' + aiAttachments.map(function (a) { return a.name; }).join(', ') + ']</small>';
+            }
+            addAIMessage('user', userContent);
+
+            input.value = '';
+            input.style.height = 'auto';
+
+            // 构建消息
+            var messages = [];
+            // 添加系统提示词
+            var sysPrompt = data.config.systemPrompt || '你是一位专业的阅读助手，擅长深度解读文本，分析作者意图和文学技巧，帮助读者更好地理解书籍内容。请用结构化的方式回答，使用 Markdown 格式。';
+            messages.push({ role: 'system', content: sysPrompt });
+            messages.push({ role: 'user', content: text });
+
+            // 如果有图片附件，使用 vision 格式
+            if (aiAttachments.some(function (a) { return a.type === 'image'; })) {
+                var contentParts = [{ type: 'text', text: text }];
+                aiAttachments.forEach(function (a) {
+                    if (a.type === 'image') {
+                        contentParts.push({ type: 'image_url', image_url: { url: a.data } });
+                    }
+                });
+                messages = [{ role: 'user', content: contentParts }];
+            }
+
+            // 如果有文件附件，添加到文本中
+            aiAttachments.forEach(function (a) {
+                if (a.type === 'file') {
+                    text += '\n\n[附件内容 ' + a.name + ']:\n' + a.data;
+                }
+            });
+
+            aiAttachments = [];
+            refreshAttachments();
+
+            addAIMessage('assistant', '<span id="stream-content"></span><i class="fas fa-spinner fa-spin" id="stream-spinner"></i>');
+
+            fetch(url + '/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+                body: JSON.stringify({ model: data.config.aiModel || 'gpt-3.5-turbo', messages: messages, stream: true })
+            }).then(function (response) {
+                var reader = response.body.getReader();
+                var decoder = new TextDecoder();
+                var fullContent = '';
+                var streamEl = document.getElementById('stream-content');
+
+                function read() {
+                    reader.read().then(function (result) {
+                        if (result.done) {
+                            var spinner = document.getElementById('stream-spinner');
+                            if (spinner) spinner.remove();
+                            try { streamEl.innerHTML = marked.parse(fullContent); } catch (e) { }
+                            return;
+                        }
+                        var chunk = decoder.decode(result.value, { stream: true });
+                        var lines = chunk.split('\n');
+                        lines.forEach(function (line) {
+                            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                                try {
+                                    var json = JSON.parse(line.slice(6));
+                                    if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
+                                        fullContent += json.choices[0].delta.content;
+                                        streamEl.textContent = fullContent;
+                                    }
+                                } catch (e) { }
+                            }
+                        });
+                        document.getElementById('ai-messages').scrollTop = document.getElementById('ai-messages').scrollHeight;
+                        read();
+                    });
+                }
+                read();
+            }).catch(function (e) {
+                var lastMsg = document.querySelector('#ai-messages .ai-msg:last-child');
+                if (lastMsg) lastMsg.remove();
+                addAIMessage('assistant', '连接失败: ' + e.message);
+            });
+        }
+
+        function quickAction(action) {
+            var input = document.getElementById('ai-input');
+            if (action === 'summary') {
+                extractFullText().then(function (text) {
+                    input.value = '请总结以下书籍的核心内容：\n\n' + text.substring(0, 10000);
+                    sendAIMessage();
+                });
+            } else if (action === 'explain') {
+                if (currentCfi) {
+                    book.getRange(currentCfi).then(function (r) {
+                        if (r) {
+                            input.value = '请解读以下文本的深层含义：\n\n' + r.toString();
+                            sendAIMessage();
+                        }
+                    });
+                } else {
+                    alert('请先在正文中选中一段文字');
+                }
+            } else if (action === 'translate') {
+                if (currentCfi) {
+                    book.getRange(currentCfi).then(function (r) {
+                        if (r) {
+                            input.value = '请将以下文本翻译成中文：\n\n' + r.toString();
+                            sendAIMessage();
+                        }
+                    });
+                } else {
+                    alert('请先在正文中选中一段文字');
+                }
+            }
+        }
+
+        function sendSelectedToAI() {
+            if (!currentCfi) return;
+            book.getRange(currentCfi).then(function (r) {
+                if (r) {
+                    document.getElementById('ai-input').value = '请解读以下文本：\n\n' + r.toString();
+                    toggleAIPanel();
+                    document.getElementById('highlight-menu').style.display = 'none';
+                }
+            });
+        }
+
+        // ========== 书库 ==========
+        function refreshLibrary() {
+            var container = document.getElementById('library-container');
+            if (!db) {
+                container.innerHTML = '<p style="text-align:center;color:#666;">数据库加载中...</p>';
+                return;
+            }
+            var tx = db.transaction('books', 'readonly');
+            var req = tx.objectStore('books').getAll();
+            req.onsuccess = function () {
+                var books = req.result;
+                if (books.length === 0) {
+                    container.innerHTML = '<p style="text-align:center;color:#666;">书库为空，请添加书籍</p>';
+                } else {
+                    container.innerHTML = books.map(function (b) {
+                        return '<div class="data-item ' + (b.id === currentBookId ? 'active' : '') + '" onclick="loadBook(\'' + b.id + '\')">' +
+                            '<span class="title">' + b.name + '</span>' +
+                            '<i class="fas fa-trash delete-btn" onclick="event.stopPropagation(); deleteBook(\'' + b.id + '\')"></i>' +
+                            '</div>';
+                    }).join('');
+                }
+            };
+        }
+
+        function loadBook(id) {
+            if (!db) return;
+            var tx = db.transaction('books', 'readonly');
+            var req = tx.objectStore('books').get(id);
+            req.onsuccess = function () {
+                if (req.result) {
+                    startReader(req.result.data, req.result.name, id);
+                }
+            };
+        }
+
+        function deleteBook(id) {
+            if (!confirm('确定删除?')) return;
+            var tx = db.transaction('books', 'readwrite');
+            tx.objectStore('books').delete(id);
+            tx.oncomplete = function () {
+                localStorage.removeItem('data_' + id);
+                refreshLibrary();
+            };
+        }
+
+        function loadFromUrl(url, name, id) {
+            fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (ab) {
+                startReader(ab, name, id);
+            }).catch(function (e) {
+                console.error('加载失败:', e);
+            });
+        }
+
+        // ========== 阅读器 ==========
+        function startReader(src, name, id) {
+            if (book) book.destroy();
+            currentBookId = id;
+            localStorage.setItem('lastBook', id);
+
+            var saved = localStorage.getItem('data_' + id);
+            if (saved) {
+                try { data = JSON.parse(saved); } catch (e) { }
+            } else {
+                data = { progress: '', bookmarks: [], highlights: [], config: { color: '#779ECB', lq: '"', rq: '"', aiUrl: '', aiKey: '', aiModel: 'gpt-3.5-turbo', systemPrompt: '' } };
+            }
+
+            book = ePub(src);
+            rendition = book.renderTo('viewer', { flow: 'scrolled-doc', width: '100%', height: '100%' });
+
+            rendition.themes.default({
+                'body': { 'background-color': '#1a1a2e !important', 'color': '#bbb !important', 'max-width': '750px !important', 'margin': '0 auto !important', 'padding': '40px 20px !important', 'text-align': 'justify !important', 'line-height': '1.8 !important' },
+                'p': { 'margin-bottom': '1.5em !important', 'text-indent': '2em !important' }
+            });
+
+            rendition.hooks.content.register(function (contents) {
+                applyQuoteHighlight(contents);
+                contents.document.onmouseup = function () {
+                    var sel = contents.window.getSelection();
+                    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                        currentCfi = contents.cfiFromRange(sel.getRangeAt(0));
+                        currentContents = contents;
+                        showHighlightMenu(contents);
+                    } else {
+                        document.getElementById('highlight-menu').style.display = 'none';
+                    }
+                };
+            });
+
+            rendition.on('rendered', function () {
+                data.highlights.forEach(function (h) {
+                    try {
+                        rendition.annotations.add('highlight', h.cfi, {}, null, 'hl', { fill: h.color + '66' });
+                    } catch (e) { }
+                });
+            });
+
+            rendition.display(data.progress || undefined);
+
+            rendition.on('relocated', function (loc) {
+                if (loc && loc.start) {
+                    data.progress = loc.start.cfi;
+                    document.getElementById('page-info').textContent = Math.floor(loc.start.percentage * 100) + '%';
+                    saveData();
+                }
+            });
+
+            book.loaded.navigation.then(function (nav) {
+                var container = document.getElementById('toc-container');
+                if (!nav || !nav.toc || nav.toc.length === 0) {
+                    container.innerHTML = '<p style="text-align:center;color:#666;">无目录</p>';
+                    return;
+                }
+                container.innerHTML = '';
+                renderToc(nav.toc, container, 0);
+            });
+
+            refreshLibrary();
+            refreshHighlights();
+            refreshBookmarks();
+            updateSettingsUI();
+        }
+
+        function renderToc(items, container, level) {
+            items.forEach(function (item) {
+                var div = document.createElement('div');
+                div.className = 'data-item';
+                div.style.paddingLeft = (12 + level * 15) + 'px';
+                div.innerHTML = '<span class="title">' + (item.label || '无标题').trim() + '</span>';
+                div.onclick = function () {
+                    rendition.display(item.href);
+                    toggleSidebar();
+                };
+                container.appendChild(div);
+                if (item.subitems && item.subitems.length > 0) {
+                    renderToc(item.subitems, container, level + 1);
+                }
+            });
+        }
+
+        function applyQuoteHighlight(contents) {
+            var lq = data.config.lq || '"';
+            var rq = data.config.rq || '"';
+            var color = data.config.color || '#779ECB';
+
+            contents.addStylesheetRules({ '.auto-hl': { 'color': color + ' !important', 'font-weight': 'bold' } });
+
+            var walker = contents.document.createTreeWalker(contents.document.body, NodeFilter.SHOW_TEXT);
+            var nodes = [];
+            var node;
+            while (node = walker.nextNode()) {
+                if (node.parentNode.tagName !== 'SCRIPT' && node.parentNode.tagName !== 'STYLE') {
+                    nodes.push(node);
+                }
+            }
+
+            var escapedLq = lq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            var escapedRq = rq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            var regex = new RegExp(escapedLq + '([^' + escapedRq + ']+)' + escapedRq, 'g');
+
+            nodes.forEach(function (n) {
+                var text = n.textContent;
+                if (!text.includes(lq)) return;
+                var frag = contents.document.createDocumentFragment();
+                var lastIdx = 0;
+                var match;
+                while ((match = regex.exec(text)) !== null) {
+                    frag.appendChild(contents.document.createTextNode(text.substring(lastIdx, match.index)));
+                    var span = contents.document.createElement('span');
+                    span.className = 'auto-hl';
+                    span.textContent = match[0];
+                    frag.appendChild(span);
+                    lastIdx = regex.lastIndex;
+                }
+                if (lastIdx > 0) {
+                    frag.appendChild(contents.document.createTextNode(text.substring(lastIdx)));
+                    n.parentNode.replaceChild(frag, n);
+                }
+            });
+        }
+
+        // ========== 高亮与笔记 ==========
+        function showHighlightMenu(contents) {
+            try {
+                var rect = contents.range(currentCfi).getBoundingClientRect();
+                var menu = document.getElementById('highlight-menu');
+                menu.style.display = 'flex';
+                menu.style.top = Math.max(10, rect.top - 55) + 'px';
+                menu.style.left = Math.max(10, rect.left + rect.width / 2 - 80) + 'px';
+            } catch (e) { }
+        }
+
+        function doHighlight(color) {
+            if (!currentCfi) return;
+            var existing = data.highlights.find(function (h) { return h.cfi === currentCfi; });
+            if (existing) {
+                existing.color = color;
+            } else {
+                data.highlights.push({ cfi: currentCfi, color: color, note: '' });
+            }
+            rendition.annotations.add('highlight', currentCfi, {}, null, 'hl', { fill: color + '66' });
+            saveData();
+            refreshHighlights();
+            document.getElementById('highlight-menu').style.display = 'none';
+            if (currentContents) currentContents.window.getSelection().removeAllRanges();
+            openNoteModal(currentCfi);
+        }
+
+        function refreshHighlights() {
+            var container = document.getElementById('highlight-container');
+            var filtered = data.highlights.filter(function (h) { return hlFilter === 'all' || h.color === hlFilter; });
+            if (filtered.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#666;">暂无高亮</p>';
+                return;
+            }
+            container.innerHTML = '';
+            filtered.forEach(function (h, idx) {
+                book.getRange(h.cfi).then(function (r) {
+                    var div = document.createElement('div');
+                    div.className = 'data-item';
+                    div.innerHTML = '<span class="title" style="border-left:4px solid ' + h.color + ';padding-left:10px;">' + (r ? r.toString().substring(0, 30) : '高亮') + '...</span>' +
+                        (h.note ? '<div class="note-preview"><i class="fas fa-comment"></i> ' + h.note + '</div>' : '') +
+                        '<i class="fas fa-trash delete-btn" onclick="event.stopPropagation(); removeHighlight(\'' + h.cfi + '\')"></i>';
+                    div.onclick = function () { rendition.display(h.cfi); toggleSidebar(); };
+                    container.appendChild(div);
+                }).catch(function () { });
+            });
+        }
+
+        function removeHighlight(cfi) {
+            try { rendition.annotations.remove(cfi, 'highlight'); } catch (e) { }
+            data.highlights = data.highlights.filter(function (h) { return h.cfi !== cfi; });
+            saveData();
+            refreshHighlights();
+        }
+
+        function openNoteModal(cfi) {
+            currentCfi = cfi;
+            var hl = data.highlights.find(function (h) { return h.cfi === cfi; });
+            document.getElementById('note-text').value = hl ? (hl.note || '') : '';
+            document.getElementById('note-modal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('note-modal').style.display = 'none';
+        }
+
+        function saveNote() {
+            var text = document.getElementById('note-text').value;
+            var hl = data.highlights.find(function (h) { return h.cfi === currentCfi; });
+            if (hl) hl.note = text;
+            saveData();
+            refreshHighlights();
+            closeModal();
+        }
+
+        // ========== 书签 ==========
+        function addBookmark() {
+            if (!rendition) return alert('请先加载书籍');
+            var loc = rendition.currentLocation();
+            if (!loc || !loc.start) return;
+            var cfi = loc.start.cfi;
+            if (data.bookmarks.some(function (b) { return b.cfi === cfi; })) {
+                return alert('此位置已有书签');
+            }
+            book.getRange(cfi).then(function (r) {
+                data.bookmarks.push({ cfi: cfi, label: r ? r.toString().substring(0, 25) + '...' : '书签', time: new Date().toLocaleString() });
+                saveData();
+                refreshBookmarks();
+                alert('书签已添加');
+            }).catch(function () {
+                data.bookmarks.push({ cfi: cfi, label: '书签 ' + (data.bookmarks.length + 1), time: new Date().toLocaleString() });
+                saveData();
+                refreshBookmarks();
+            });
+        }
+
+        function refreshBookmarks() {
+            var container = document.getElementById('bookmark-container');
+            if (data.bookmarks.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:#666;">暂无书签</p>';
+                return;
+            }
+            container.innerHTML = data.bookmarks.map(function (b, idx) {
+                return '<div class="data-item" onclick="goBookmark(\'' + b.cfi + '\')">' +
+                    '<span class="title">' + b.label + '</span>' +
+                    '<span style="font-size:10px;color:#555;">' + b.time + '</span>' +
+                    '<i class="fas fa-trash delete-btn" onclick="event.stopPropagation(); deleteBookmark(' + idx + ')"></i>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function goBookmark(cfi) {
+            rendition.display(cfi);
+            toggleSidebar();
+        }
+
+        function deleteBookmark(idx) {
+            data.bookmarks.splice(idx, 1);
+            saveData();
+            refreshBookmarks();
+        }
+
+        // ========== 工具函数 ==========
+        function extractFullText() {
+            var fullText = '';
+            var items = book.spine.spineItems;
+            var promises = items.slice(0, 20).map(function (item) {
+                return book.load(item.href).then(function (doc) {
+                    if (doc && doc.body) fullText += doc.body.innerText + '\n';
+                }).catch(function () { });
+            });
+            return Promise.all(promises).then(function () { return fullText.substring(0, 50000); });
+        }
+
+        // ========== 设置 ==========
+        function updateSettingsUI() {
+            // 左侧 AI 面板设置
+            var aiUrl = document.getElementById('ai-url');
+            var aiKey = document.getElementById('ai-key');
+            var aiModel = document.getElementById('ai-model');
+            var aiPrompt = document.getElementById('ai-system-prompt');
+            if (aiUrl) aiUrl.value = data.config.aiUrl || '';
+            if (aiKey) aiKey.value = data.config.aiKey || '';
+            if (aiModel) aiModel.value = data.config.aiModel || 'gpt-3.5-turbo';
+            if (aiPrompt) aiPrompt.value = data.config.systemPrompt || '';
+            // 右侧引号设置
+            var cfgColor = document.getElementById('cfg-color');
+            var cfgLq = document.getElementById('cfg-lq');
+            var cfgRq = document.getElementById('cfg-rq');
+            if (cfgColor) cfgColor.value = data.config.color || '#779ECB';
+            if (cfgLq) cfgLq.value = data.config.lq || '"';
+            if (cfgRq) cfgRq.value = data.config.rq || '"';
+        }
+
+        function saveSettings() {
+            // 左侧 AI 面板设置
+            var aiUrl = document.getElementById('ai-url');
+            var aiKey = document.getElementById('ai-key');
+            var aiModel = document.getElementById('ai-model');
+            var aiPrompt = document.getElementById('ai-system-prompt');
+            if (aiUrl) data.config.aiUrl = aiUrl.value;
+            if (aiKey) data.config.aiKey = aiKey.value;
+            if (aiModel) data.config.aiModel = aiModel.value;
+            if (aiPrompt) data.config.systemPrompt = aiPrompt.value;
+            // 右侧引号设置
+            var cfgColor = document.getElementById('cfg-color');
+            var cfgLq = document.getElementById('cfg-lq');
+            var cfgRq = document.getElementById('cfg-rq');
+            if (cfgColor) data.config.color = cfgColor.value;
+            if (cfgLq) data.config.lq = cfgLq.value;
+            if (cfgRq) data.config.rq = cfgRq.value;
+            saveData();
+            alert('设置已保存');
+        }
+
+        var promptPresets = {
+            reader: '你是一位专业的阅读助手，擅长深度解读文本，分析作者意图和文学技巧，帮助读者更好地理解书籍内容。回答时请使用 Markdown 格式，包含清晰的标题和条理分明的要点。',
+            analyst: '你是一位学术分析专家，善于进行深层次的文本分析，包括主题挖掘、象征意义解读、历史背景分析等。请提供详尽的学术级解读，使用 Markdown 格式组织答案。',
+            teacher: '你是一位耐心的教师，擅长用通俗易懂的方式解释复杂概念。回答时请循序渐进，使用例子和类比帮助理解，适当提出思考问题引导深入学习。使用 Markdown 格式。',
+            translator: '你是一位精通多语言的翻译专家，能够准确传达原文的含义和语气。翻译时保持原文的风格和语感，必要时提供注释说明文化背景。使用 Markdown 格式。'
+        };
+
+        function setPromptPreset(type) {
+            if (promptPresets[type]) {
+                document.getElementById('ai-system-prompt').value = promptPresets[type];
+            }
+        }
+
+        function saveData() {
+            if (currentBookId) {
+                localStorage.setItem('data_' + currentBookId, JSON.stringify(data));
+            }
+        }
+    </script>
+</body>
+
+</html>
