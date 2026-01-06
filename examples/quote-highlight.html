@@ -753,8 +753,8 @@
                         <span class="prompt-tag" onclick="setPromptPreset('translator')">🌐 翻译</span>
                     </div>
                 </div>
-                <button onclick="saveSettings()"
-                    style="width:100%;padding:8px;background:var(--primary-color);border:none;border-radius:4px;cursor:pointer;font-size:12px;">保存设置</button>
+                <button onclick="saveSettings(); toggleAISettings()"
+                    style="width:100%;padding:8px;background:var(--primary-color);border:none;border-radius:4px;cursor:pointer;font-size:12px;">保存并关闭</button>
             </div>
         </div>
     </div>
@@ -788,18 +788,35 @@
                 <div id="bookmark-container"></div>
             </div>
             <div id="pane-highlights" class="tab-pane">
-                <div class="filter-bar">
+                <div class="filter-bar" style="align-items: center; gap: 10px;">
                     <div class="filter-dot active"
                         style="background:#444;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px;"
-                        data-filter="all">ALL</div>
-                    <div class="filter-dot" style="background:#779ECB" data-filter="#779ECB"></div>
-                    <div class="filter-dot" style="background:#8FBC8F" data-filter="#8FBC8F"></div>
-                    <div class="filter-dot" style="background:#C08081" data-filter="#C08081"></div>
-                    <div class="filter-dot" style="background:#E1AD01" data-filter="#E1AD01"></div>
+                        data-filter="all" data-desc="全部高亮">ALL</div>
+                    <div class="filter-dot" style="background:#779ECB" data-filter="#779ECB" data-desc="精彩观点 💡"></div>
+                    <div class="filter-dot" style="background:#8FBC8F" data-filter="#8FBC8F" data-desc="治愈时刻 🌿"></div>
+                    <div class="filter-dot" style="background:#C08081" data-filter="#C08081" data-desc="情感共鸣 ❤️"></div>
+                    <div class="filter-dot" style="background:#E1AD01" data-filter="#E1AD01" data-desc="核心金句 ⭐"></div>
+                    <span id="filter-desc" style="font-size: 12px; color: #888; margin-left: auto;">全部高亮</span>
                 </div>
                 <div id="highlight-container"></div>
             </div>
             <div id="pane-settings" class="tab-pane">
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-size:12px; color:#888; margin-bottom:8px;">阅读背景</label>
+                    <div style="display:flex; gap:12px;">
+                        <div class="color-opt" style="background:#1a1a2e; border:1px solid #444;"
+                            onclick="setTheme('dark')" title="深色模式"></div>
+                        <div class="color-opt" style="background:#fff; border:1px solid #ddd;"
+                            onclick="setTheme('light')" title="浅色模式"></div>
+                        <div class="color-opt" style="background:#D4E2D4;" onclick="setTheme('morandi-green')"
+                            title="莫兰迪绿"></div>
+                        <div class="color-opt" style="background:#D4DCE2;" onclick="setTheme('morandi-blue')"
+                            title="莫兰迪蓝"></div>
+                        <div class="color-opt" style="background:#E2D4D4;" onclick="setTheme('morandi-pink')"
+                            title="莫兰迪粉"></div>
+                    </div>
+                </div>
+
                 <div style="margin-bottom:20px;">
                     <label style="display:block; font-size:12px; color:#888; margin-bottom:8px;">引号高亮颜色</label>
                     <div style="display:flex; gap:8px;">
@@ -935,6 +952,10 @@
                     document.querySelectorAll('.filter-dot').forEach(function (d) { d.classList.remove('active'); });
                     dot.classList.add('active');
                     hlFilter = dot.dataset.filter;
+                    // 更新描述文字
+                    var desc = dot.getAttribute('data-desc');
+                    var descEl = document.getElementById('filter-desc');
+                    if (descEl) descEl.textContent = desc || '';
                     refreshHighlights();
                 };
             });
@@ -1112,42 +1133,55 @@
             if (action === 'summary') {
                 extractFullText().then(function (text) {
                     input.value = '请总结以下书籍的核心内容：\n\n' + text.substring(0, 10000);
+                    // 总结全书可以自动发送
                     sendAIMessage();
                 });
-            } else if (action === 'explain') {
-                if (currentCfi) {
-                    book.getRange(currentCfi).then(function (r) {
-                        if (r) {
-                            input.value = '请解读以下文本的深层含义：\n\n' + r.toString();
-                            sendAIMessage();
-                        }
-                    });
-                } else {
+            } else {
+                // 对于解读和翻译，先获取文本填入框中，让用户确认
+                if (!currentCfi) {
                     alert('请先在正文中选中一段文字');
+                    return;
                 }
-            } else if (action === 'translate') {
-                if (currentCfi) {
-                    book.getRange(currentCfi).then(function (r) {
-                        if (r) {
-                            input.value = '请将以下文本翻译成中文：\n\n' + r.toString();
-                            sendAIMessage();
-                        }
-                    });
+
+                // 优先尝试直接获取选区文本（更准确且不依赖异步）
+                var text = '';
+                if (currentContents && currentContents.window.getSelection()) {
+                    text = currentContents.window.getSelection().toString();
+                }
+
+                if (text) {
+                    fillAndOpenAI(action, text);
                 } else {
-                    alert('请先在正文中选中一段文字');
+                    // 兜底使用 getRange
+                    book.getRange(currentCfi).then(function (r) {
+                        if (r) fillAndOpenAI(action, r.toString());
+                    });
                 }
             }
         }
 
+        function fillAndOpenAI(action, text) {
+            var input = document.getElementById('ai-input');
+            var prefix = '';
+            if (action === 'explain') prefix = '请解读以下文本的深层含义：\n\n';
+            else if (action === 'translate') prefix = '请将以下文本翻译成中文：\n\n';
+            else prefix = '请解读以下文本：\n\n'; // 默认情况
+
+            input.value = prefix + text;
+
+            // 确保面板打开并聚焦
+            var panel = document.getElementById('ai-panel');
+            if (!panel.classList.contains('open')) {
+                toggleAIPanel();
+            }
+            input.focus();
+
+            // 隐藏高亮菜单
+            document.getElementById('highlight-menu').style.display = 'none';
+        }
+
         function sendSelectedToAI() {
-            if (!currentCfi) return;
-            book.getRange(currentCfi).then(function (r) {
-                if (r) {
-                    document.getElementById('ai-input').value = '请解读以下文本：\n\n' + r.toString();
-                    toggleAIPanel();
-                    document.getElementById('highlight-menu').style.display = 'none';
-                }
-            });
+            quickAction('default'); // 复用逻辑
         }
 
         // ========== 书库 ==========
@@ -1219,10 +1253,36 @@
             book = ePub(src);
             rendition = book.renderTo('viewer', { flow: 'scrolled-doc', width: '100%', height: '100%' });
 
-            rendition.themes.default({
-                'body': { 'background-color': '#1a1a2e !important', 'color': '#bbb !important', 'max-width': '750px !important', 'margin': '0 auto !important', 'padding': '40px 20px !important', 'text-align': 'justify !important', 'line-height': '1.8 !important' },
+            // 定义通用样式
+            var commonStyle = {
+                'max-width': '750px !important',
+                'margin': '0 auto !important',
+                'padding': '40px 20px !important',
+                'text-align': 'justify !important',
+                'line-height': '1.8 !important',
                 'p': { 'margin-bottom': '1.5em !important', 'text-indent': '2em !important' }
-            });
+            };
+
+            // 注册主题
+            rendition.themes.register('dark', Object.assign({}, commonStyle, {
+                'body': Object.assign({}, commonStyle, { 'background-color': '#1a1a2e !important', 'color': '#bbb !important' })
+            }));
+            rendition.themes.register('light', Object.assign({}, commonStyle, {
+                'body': Object.assign({}, commonStyle, { 'background-color': '#fff !important', 'color': '#000 !important' })
+            }));
+            rendition.themes.register('morandi-green', Object.assign({}, commonStyle, {
+                'body': Object.assign({}, commonStyle, { 'background-color': '#D4E2D4 !important', 'color': '#2C3E50 !important' })
+            }));
+            rendition.themes.register('morandi-blue', Object.assign({}, commonStyle, {
+                'body': Object.assign({}, commonStyle, { 'background-color': '#D4DCE2 !important', 'color': '#2C3E50 !important' })
+            }));
+            rendition.themes.register('morandi-pink', Object.assign({}, commonStyle, {
+                'body': Object.assign({}, commonStyle, { 'background-color': '#E2D4D4 !important', 'color': '#2C3E50 !important' })
+            }));
+
+            // 应用保存的主题或默认深色
+            var initialTheme = data.config.theme || 'dark';
+            rendition.themes.select(initialTheme);
 
             rendition.hooks.content.register(function (contents) {
                 applyQuoteHighlight(contents);
@@ -1231,6 +1291,8 @@
                     if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
                         currentCfi = contents.cfiFromRange(sel.getRangeAt(0));
                         currentContents = contents;
+                        // 立即保存选中文本，防止点击 UI 时焦点丢失
+                        currentText = sel.toString();
                         showHighlightMenu(contents);
                     } else {
                         document.getElementById('highlight-menu').style.display = 'none';
@@ -1336,24 +1398,63 @@
                 var rect = contents.range(currentCfi).getBoundingClientRect();
                 var menu = document.getElementById('highlight-menu');
                 menu.style.display = 'flex';
-                menu.style.top = Math.max(10, rect.top - 55) + 'px';
-                menu.style.left = Math.max(10, rect.left + rect.width / 2 - 80) + 'px';
+
+                // 垂直位置：在选区上方，如果空间不足则在下方
+                var menuHeight = 50;
+                var top = rect.top - menuHeight - 15;
+                if (top < 10) top = rect.bottom + 15;
+
+                // 底部边界检查：如果超出屏幕底部，强制上移
+                var winHeight = window.innerHeight;
+                if (top + menuHeight > winHeight - 10) {
+                    top = winHeight - menuHeight - 10;
+                    // 如果上移后又导致顶部溢出（比如选区实在太高），则优先保证顶部可见
+                    if (top < 10) top = 10;
+                }
+
+                menu.style.top = top + 'px';
+
+                // 水平位置：强制屏幕居中
+                menu.style.left = '50%';
+                menu.style.transform = 'translateX(-50%)';
             } catch (e) { }
         }
 
         function doHighlight(color) {
             if (!currentCfi) return;
+
+            // 优先使用 mouseup 时保存的文本
+            var text = currentText || '';
+            if (!text && currentContents && currentContents.window.getSelection()) {
+                text = currentContents.window.getSelection().toString();
+            }
+
+            if (!text) {
+                book.getRange(currentCfi).then(function (r) {
+                    saveHighlightWithText(color, r ? r.toString() : '');
+                });
+                return;
+            }
+            saveHighlightWithText(color, text);
+        }
+
+        function saveHighlightWithText(color, text) {
             var existing = data.highlights.find(function (h) { return h.cfi === currentCfi; });
             if (existing) {
                 existing.color = color;
+                if (!existing.text && text) existing.text = text;
             } else {
-                data.highlights.push({ cfi: currentCfi, color: color, note: '' });
+                data.highlights.push({ cfi: currentCfi, color: color, note: '', text: text });
             }
             rendition.annotations.add('highlight', currentCfi, {}, null, 'hl', { fill: color + '66' });
             saveData();
             refreshHighlights();
             document.getElementById('highlight-menu').style.display = 'none';
-            if (currentContents) currentContents.window.getSelection().removeAllRanges();
+            if (currentContents && currentContents.window.getSelection()) {
+                currentContents.window.getSelection().removeAllRanges();
+            }
+            // 清空临时保存的文本
+            currentText = '';
             openNoteModal(currentCfi);
         }
 
@@ -1366,16 +1467,32 @@
             }
             container.innerHTML = '';
             filtered.forEach(function (h, idx) {
-                book.getRange(h.cfi).then(function (r) {
-                    var div = document.createElement('div');
-                    div.className = 'data-item';
-                    div.innerHTML = '<span class="title" style="border-left:4px solid ' + h.color + ';padding-left:10px;">' + (r ? r.toString().substring(0, 30) : '高亮') + '...</span>' +
-                        (h.note ? '<div class="note-preview"><i class="fas fa-comment"></i> ' + h.note + '</div>' : '') +
-                        '<i class="fas fa-trash delete-btn" onclick="event.stopPropagation(); removeHighlight(\'' + h.cfi + '\')"></i>';
-                    div.onclick = function () { rendition.display(h.cfi); toggleSidebar(); };
-                    container.appendChild(div);
-                }).catch(function () { });
+                // 优先使用保存的文本
+                if (h.text) {
+                    renderHighlightItem(container, h, h.text);
+                } else {
+                    // 旧数据或获取失败的尝试重新获取
+                    book.getRange(h.cfi).then(function (r) {
+                        var txt = r ? r.toString() : '高亮';
+                        // 顺便保存下来
+                        h.text = txt;
+                        saveData();
+                        renderHighlightItem(container, h, txt);
+                    }).catch(function () {
+                        renderHighlightItem(container, h, '高亮...');
+                    });
+                }
             });
+        }
+
+        function renderHighlightItem(container, h, text) {
+            var div = document.createElement('div');
+            div.className = 'data-item';
+            div.innerHTML = '<span class="title" style="border-left:4px solid ' + h.color + ';padding-left:10px;">' + (text.substring(0, 30)) + (text.length > 30 ? '...' : '') + '</span>' +
+                (h.note ? '<div class="note-preview"><i class="fas fa-comment"></i> ' + h.note + '</div>' : '') +
+                '<i class="fas fa-trash delete-btn" onclick="event.stopPropagation(); removeHighlight(\'' + h.cfi + '\')"></i>';
+            div.onclick = function () { rendition.display(h.cfi); toggleSidebar(); };
+            container.appendChild(div);
         }
 
         function removeHighlight(cfi) {
@@ -1515,6 +1632,16 @@
         function setPromptPreset(type) {
             if (promptPresets[type]) {
                 document.getElementById('ai-system-prompt').value = promptPresets[type];
+            }
+        }
+
+        function setTheme(themeName) {
+            if (rendition) {
+                rendition.themes.select(themeName);
+                data.config.theme = themeName;
+                saveData(); // 保存设置
+
+                // 更新高亮边框以在 UI 上显示选中状态 (如果需要可添加 UI 反馈逻辑)
             }
         }
 
