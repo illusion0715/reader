@@ -662,6 +662,94 @@
             padding-top: 5px;
             border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
+
+        /* 搜索功能样式 */
+        .search-box {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #eee;
+            font-size: 13px;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .search-box input::placeholder {
+            color: #666;
+        }
+
+        .search-box button {
+            padding: 10px 15px;
+            background: var(--primary-color);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .search-box button:hover {
+            opacity: 0.85;
+        }
+
+        .search-box button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .search-status {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 6px;
+        }
+
+        .search-result-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            transition: 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .search-result-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-left-color: var(--primary-color);
+        }
+
+        .search-result-item .excerpt {
+            font-size: 13px;
+            color: #ccc;
+            line-height: 1.5;
+        }
+
+        .search-result-item .excerpt mark {
+            background: rgba(119, 158, 203, 0.4);
+            color: #fff;
+            padding: 1px 3px;
+            border-radius: 2px;
+        }
+
+        .search-result-item .chapter {
+            font-size: 11px;
+            color: #666;
+            margin-top: 6px;
+        }
     </style>
 </head>
 
@@ -772,6 +860,7 @@
         <div class="sidebar-tabs">
             <button class="tab-btn active" data-tab="library">书库</button>
             <button class="tab-btn" data-tab="toc">目录</button>
+            <button class="tab-btn" data-tab="search">搜索</button>
             <button class="tab-btn" data-tab="bookmarks">书签</button>
             <button class="tab-btn" data-tab="highlights">高亮</button>
             <button class="tab-btn" data-tab="settings">设置</button>
@@ -783,6 +872,14 @@
             </div>
             <div id="pane-toc" class="tab-pane">
                 <div id="toc-container"></div>
+            </div>
+            <div id="pane-search" class="tab-pane">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="输入关键词搜索..." onkeydown="handleSearchKey(event)">
+                    <button id="search-btn" onclick="performSearch()"><i class="fas fa-search"></i></button>
+                </div>
+                <div id="search-status" class="search-status" style="display:none;"></div>
+                <div id="search-results"></div>
             </div>
             <div id="pane-bookmarks" class="tab-pane">
                 <div id="bookmark-container"></div>
@@ -1643,6 +1740,145 @@
 
                 // 更新高亮边框以在 UI 上显示选中状态 (如果需要可添加 UI 反馈逻辑)
             }
+        }
+
+        // ========== 搜索功能 ==========
+        var isSearching = false;
+
+        function handleSearchKey(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                performSearch();
+            }
+        }
+
+        function performSearch() {
+            if (!book) {
+                alert('请先加载书籍');
+                return;
+            }
+
+            var query = document.getElementById('search-input').value.trim();
+            if (!query) {
+                alert('请输入搜索关键词');
+                return;
+            }
+
+            if (isSearching) return;
+            isSearching = true;
+
+            var searchBtn = document.getElementById('search-btn');
+            var statusEl = document.getElementById('search-status');
+            var resultsEl = document.getElementById('search-results');
+
+            searchBtn.disabled = true;
+            searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在搜索...';
+            resultsEl.innerHTML = '';
+
+            var allResults = [];
+            var items = book.spine.spineItems;
+            var processed = 0;
+
+            function searchSection(index) {
+                if (index >= items.length) {
+                    // 搜索完成
+                    finishSearch(query, allResults);
+                    return;
+                }
+
+                var item = items[index];
+                statusEl.textContent = '正在搜索第 ' + (index + 1) + '/' + items.length + ' 章节...';
+
+                item.load(book.load.bind(book)).then(function (contents) {
+                    if (contents && contents.body) {
+                        var text = contents.body.innerText || contents.body.textContent || '';
+                        var lowerText = text.toLowerCase();
+                        var lowerQuery = query.toLowerCase();
+                        var startIndex = 0;
+                        var pos;
+
+                        while ((pos = lowerText.indexOf(lowerQuery, startIndex)) !== -1) {
+                            // 获取上下文
+                            var contextStart = Math.max(0, pos - 40);
+                            var contextEnd = Math.min(text.length, pos + query.length + 40);
+                            var excerpt = text.substring(contextStart, contextEnd);
+
+                            // 添加省略号
+                            if (contextStart > 0) excerpt = '...' + excerpt;
+                            if (contextEnd < text.length) excerpt = excerpt + '...';
+
+                            allResults.push({
+                                cfi: item.cfiFromElement(contents.body),
+                                href: item.href,
+                                excerpt: excerpt,
+                                query: query,
+                                chapter: item.label || item.href
+                            });
+
+                            startIndex = pos + query.length;
+
+                            // 每章最多显示5个结果
+                            if (allResults.filter(function (r) { return r.href === item.href; }).length >= 5) {
+                                break;
+                            }
+                        }
+                    }
+                    item.unload();
+                    processed++;
+                    searchSection(index + 1);
+                }).catch(function (e) {
+                    console.log('搜索章节失败:', e);
+                    processed++;
+                    searchSection(index + 1);
+                });
+            }
+
+            searchSection(0);
+        }
+
+        function finishSearch(query, results) {
+            isSearching = false;
+            var searchBtn = document.getElementById('search-btn');
+            var statusEl = document.getElementById('search-status');
+            var resultsEl = document.getElementById('search-results');
+
+            searchBtn.disabled = false;
+            searchBtn.innerHTML = '<i class="fas fa-search"></i>';
+
+            if (results.length === 0) {
+                statusEl.textContent = '未找到匹配结果';
+                resultsEl.innerHTML = '<p style="text-align:center;color:#666;margin-top:20px;">没有找到包含 "' + query + '" 的内容</p>';
+            } else {
+                statusEl.textContent = '找到 ' + results.length + ' 个匹配结果';
+                resultsEl.innerHTML = '';
+
+                results.forEach(function (r, idx) {
+                    var div = document.createElement('div');
+                    div.className = 'search-result-item';
+
+                    // 高亮显示搜索词
+                    var highlightedExcerpt = r.excerpt.replace(
+                        new RegExp('(' + escapeRegExp(r.query) + ')', 'gi'),
+                        '<mark>$1</mark>'
+                    );
+
+                    div.innerHTML = '<div class="excerpt">' + highlightedExcerpt + '</div>' +
+                        '<div class="chapter"><i class="fas fa-book-open"></i> ' + (r.chapter || '章节 ' + (idx + 1)) + '</div>';
+
+                    div.onclick = function () {
+                        rendition.display(r.href);
+                        toggleSidebar();
+                    };
+
+                    resultsEl.appendChild(div);
+                });
+            }
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
 
         function saveData() {
